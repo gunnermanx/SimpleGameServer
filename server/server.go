@@ -10,18 +10,38 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/gunnermanx/simplegameserver/auth"
 	"github.com/gunnermanx/simplegameserver/config"
+	"github.com/gunnermanx/simplegameserver/datastore"
 )
+
+// The server should handle the following responsibilities
+//
+// Game management (creation/deletion)
+// Joining/Leaving games
+// Relay messages between the server and clients
 
 type SimpleGameServer struct {
 	config   config.ServerConfig
 	serveMux http.ServeMux
 	server   http.Server
+
+	games map[string]*Game
+
+	datastore    datastore.Datastore
+	authProvider auth.AuthProvider
 }
 
-func New(conf config.ServerConfig) (s *SimpleGameServer, err error) {
+func New(
+	conf config.ServerConfig,
+	ds datastore.Datastore,
+	ap auth.AuthProvider,
+) (s *SimpleGameServer, err error) {
+
 	s = &SimpleGameServer{
-		config: conf,
+		config:       conf,
+		datastore:    ds,
+		authProvider: ap,
 	}
 
 	s.SetupHandlers()
@@ -30,18 +50,31 @@ func New(conf config.ServerConfig) (s *SimpleGameServer, err error) {
 		Handler: s,
 	}
 
+	s.games = make(map[string]*Game)
+
 	return
 }
 
-func (mm *SimpleGameServer) Start() (err error) {
+func (ss *SimpleGameServer) Connect() (err error) {
+	// connect to the server,
+	// var user model.User
+	// if user, err = ss.datastore.FindUser(); err != nil {
+	// 	return
+	// }
+
+	return
+}
+
+func (ss *SimpleGameServer) Start() (err error) {
 	var listener net.Listener
-	if listener, err = net.Listen("tcp", fmt.Sprintf(":%s", mm.config.Port)); err != nil {
+	if listener, err = net.Listen("tcp", fmt.Sprintf(":%s", ss.config.Port)); err != nil {
 		return
 	}
 
 	errc := make(chan error, 1)
 	go func() {
-		errc <- mm.server.Serve(listener)
+		log.Println("Starting game server")
+		errc <- ss.server.Serve(listener)
 	}()
 
 	// Wait for termination or errors
@@ -57,5 +90,5 @@ func (mm *SimpleGameServer) Start() (err error) {
 	// Gracefully shutdown with timeout of 10s
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
-	return mm.server.Shutdown(ctx)
+	return ss.server.Shutdown(ctx)
 }
