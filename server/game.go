@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
@@ -16,7 +17,7 @@ type GameLogic func(context.Context, *Game) error
 
 type Game struct {
 	ID      string
-	Players map[string]*Player
+	Players sync.Map
 	Context context.Context
 	Logger  *logrus.Entry
 
@@ -33,7 +34,7 @@ func (sgs *SimpleGameServer) createGame() (game *Game, err error) {
 
 	game = &Game{
 		ID:           uuid.New().String(),
-		Players:      make(map[string]*Player),
+		Players:      sync.Map{},
 		GameMessages: make(chan GameMessage),
 	}
 	sgs.games[game.ID] = game
@@ -77,12 +78,16 @@ func (g *Game) addPlayer(playerID string, wsconn *websocket.Conn) (err error) {
 	// create or get the player in the game
 	var p *Player
 	var exists bool
-	if p, exists = g.Players[playerID]; !exists {
+
+	var val interface{}
+	if val, exists = g.Players.Load(playerID); !exists {
 		// log player creation?
 		p = &Player{
 			ID: playerID,
 		}
-		g.Players[playerID] = p
+		g.Players.Store(playerID, p)
+	} else {
+		p = val.(*Player)
 	}
 	p.WSConn = wsconn
 
@@ -123,7 +128,7 @@ func (g *Game) addPlayer(playerID string, wsconn *websocket.Conn) (err error) {
 						return
 					}
 				} else {
-					game.Logger.Debugf("received: %v", gamemsg)
+					//game.Logger.Debugf("received: %v", gamemsg)
 					game.GameMessages <- gamemsg
 				}
 			}
