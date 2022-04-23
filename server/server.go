@@ -10,11 +10,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gunnermanx/simplegameserver/auth"
 	"github.com/gunnermanx/simplegameserver/config"
 	"github.com/gunnermanx/simplegameserver/datastore"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"nhooyr.io/websocket"
 )
 
 // The server should handle the following responsibilities
@@ -27,6 +29,20 @@ const (
 	GRACEFUL_SHUTDOWN_TIME_S = 10
 )
 
+// GameInit is called when a game instance on the server is created
+// This should be implemented by a concrete game server and added to the server using WithGameInit
+type GameInit func(ctx context.Context, g *Game, playerIDs []string) (map[string][]GameMessage, error)
+
+// GameTick is called once every server tick and defines the behavior of the game server
+// This should be implemented by a concrete game server and added to the server using WithGameTick
+type GameTick func(ctx context.Context, g *Game, msgs []GameMessage) (map[string][]GameMessage, error)
+
+// SimpleGameServer encapsulates the functionality of a simple game server
+//
+// The functionality available are:
+//   Game management (creation/deletion)
+//   Joining/Leaving games
+//   Relay messages between the server and clients
 type SimpleGameServer struct {
 	sync.Mutex
 
@@ -41,6 +57,7 @@ type SimpleGameServer struct {
 	datastore    datastore.Datastore
 	authProvider auth.AuthProvider
 
+	gameInit GameInit
 	gameTick GameTick
 }
 
@@ -49,7 +66,7 @@ func New(
 	logger *logrus.Logger,
 	ap auth.AuthProvider,
 	ds datastore.Datastore,
-) (s *SimpleGameServer, err error) {
+) (s *SimpleGameServer) {
 
 	s = &SimpleGameServer{
 		config:       conf,
@@ -73,7 +90,7 @@ func New(
 func (sgs *SimpleGameServer) Start() (err error) {
 	var listener net.Listener
 	// TODO remove localhost
-	if listener, err = net.Listen("tcp", fmt.Sprintf("localhost:%s", sgs.config.Port)); err != nil {
+	if listener, err = net.Listen("tcp", fmt.Sprintf(":%s", sgs.config.Port)); err != nil {
 		err = errors.Wrap(err, "failed to start game server")
 		sgs.logger.Error(err)
 		return
@@ -102,11 +119,17 @@ func (sgs *SimpleGameServer) Start() (err error) {
 	return sgs.server.Shutdown(ctx)
 }
 
-// Register game logic for the server
-func (sgs *SimpleGameServer) RegisterGameLogic(gamelogic GameTick) {
-	sgs.gameTick = gamelogic
+func (sgs *SimpleGameServer) WithGameInit(init GameInit) {
+	sgs.gameInit = init
 }
 
+func (sgs *SimpleGameServer) WithGameTick(tick GameTick) {
+	sgs.gameTick = tick
+}
+
+// connect will connect a player to the server
+// during connect, the server will fetch player data and cache it on the server
+// TODO
 func (sgs *SimpleGameServer) connect(playerID string) (err error) {
 	// TODO pull from db
 	// TODO add some protection
@@ -120,4 +143,57 @@ func (sgs *SimpleGameServer) connect(playerID string) (err error) {
 		}
 	}
 	return
+}
+
+// createGame creates and runs a game instance on the server
+func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout int) (game *Game, err error) {
+	// TODO need some form of protection here later
+	game = &Game{
+		ID:           uuid.New().String(),
+		Players:      make(map[string]*Player),
+		GameMessages: make(chan GameMessage),
+		NumPlayers:   numPlayers,
+	}
+	game.Logger = sgs.logger.WithFields(logrus.Fields{
+		"gameID": game.ID,
+	})
+	sgs.Lock()
+	sgs.games[game.ID] = game
+	sgs.Unlock()
+
+	// Run the game in a separate goroutine
+	go game.run(sgs.gameInit, sgs.gameTick, sgs.config.TickIntervalMS, waitForPlayersTimeout)
+
+	return
+}
+
+// joinGame adds a player to an existing game on the server
+func (sgs *SimpleGameServer) joinGame(
+	gameID string,
+	playerID string,
+	wsconn *websocket.Conn,
+) (err error) {
+	// find the game instance with the given ID
+	var g *Game
+	var exists bool
+	sgs.Lock()
+	g, exists = sgs.games[gameID]
+	sgs.Unlock()
+	if !exists {
+		err = fmt.Errorf("failed to join game, gameID: %s. gameID not found", gameID)
+		wsconn.Close(WS_STATUS_INVALID_PARAMETERS, err.Error())
+		return
+	}
+
+	g.Lock()
+	currentNumPlayers := len(g.Players)
+	g.Unlock()
+	if currentNumPlayers >= g.NumPlayers {
+		err = fmt.Errorf("failed to join game, gameID: %s. game is full", gameID)
+		wsconn.Close(WS_STATUS_INVALID_PARAMETERS, err.Error())
+		return
+	}
+
+	// Add the player to the game
+	return g.addPlayer(playerID, wsconn)
 }

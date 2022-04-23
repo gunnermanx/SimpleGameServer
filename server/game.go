@@ -8,14 +8,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
 )
 
-type GameTick func(ctx context.Context, g *Game, msgs []GameMessage) error
-
+// Game models a game running on the game server
 type Game struct {
 	sync.Mutex
 
@@ -26,76 +24,92 @@ type Game struct {
 
 	NumPlayers   int
 	GameMessages chan GameMessage
+
+	Data interface{}
 }
 
+// Player models a player connected to a game
+// and contains the websocket connection used to communicate between the client and server
 type Player struct {
 	ID     string
 	WSConn *websocket.Conn
 }
 
-func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout int) (game *Game, err error) {
-	// TODO need some form of protection here later
+// run will run the code for a game instance
+//
+// run will do the following:
+//   1. wait until the number of required
+//   2. initialize the game instance once players have joined
+//   3. start the game loop
+func (g *Game) run(
+	gameInit GameInit,
+	gameTick GameTick,
+	tickIntervalMS int,
+	waitForPlayersTimeout int,
+) {
+	// Create a new context for the game
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	g.Context = ctx
 
-	game = &Game{
-		ID:           uuid.New().String(),
-		Players:      make(map[string]*Player),
-		GameMessages: make(chan GameMessage),
-		NumPlayers:   numPlayers,
+	// Wait for players before starting gameloop
+	var playerIDs []string
+	var err error
+	g.Logger.Debug("started waiting for players")
+	if playerIDs, err = g.waitForPlayers(waitForPlayersTimeout); err != nil {
+		g.Logger.Errorf("failed waiting for players: %s", err.Error())
+		cancel()
+		return
 	}
-	game.Logger = sgs.logger.WithFields(logrus.Fields{
-		"gameID": game.ID,
-	})
+	g.Logger.Debugf("finished waiting for players. p1: %s, p2: %s", playerIDs[0], playerIDs[1])
 
-	sgs.Lock()
-	sgs.games[game.ID] = game
-	sgs.Unlock()
+	// Initialize the game instance
+	var out map[string][]GameMessage
+	if out, err = gameInit(ctx, g, playerIDs); err != nil {
+		g.Logger.Errorf("error in gameinit: %s", err.Error())
+		cancel()
+	}
+	if err = g.sendMessagesToPlayers(out); err != nil {
+		// TODO maybe
+		cancel()
+		return
+	}
 
-	// Create a goroutine to run the gamelogic
-	go func(g *Game) {
-		// Create a new context for the game
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		g.Context = ctx
+	// simple game loop:
+	ticker := time.NewTicker(time.Duration(tickIntervalMS) * time.Millisecond)
+	msgs := []GameMessage{}
+	for {
+		select {
+		case <-ticker.C:
 
-		// Wait for players before starting game logic
-		var playerIDs []string
-		var err error
-		sgs.logger.Debug("started waiting for players")
-		if playerIDs, err = waitForPlayers(g, waitForPlayersTimeout); err != nil {
-			sgs.logger.Errorf("failed waiting for players: %s", err.Error())
-			cancel()
-			return
-		}
-		sgs.logger.Debugf("finished waiting for players. p1: %s, p2: %s", playerIDs[0], playerIDs[1])
-
-		// Send GameReady message to all players
-
-		// Basic game loop:
-		ticker := time.NewTicker(time.Duration(sgs.config.TickIntervalMS) * time.Millisecond)
-		msgs := []GameMessage{}
-		for {
-			select {
-			case <-ticker.C:
-
-				// Run the gameTick
-				sgs.gameTick(ctx, g, msgs)
-
-				msgs = nil
-
-			case msg := <-g.GameMessages:
-				g.Logger.Infof("colleting msg from channel: %v", msg)
-				msgs = append(msgs, msg)
-				// TODO parse them
+			// Run the gameTick
+			var out map[string][]GameMessage
+			if out, err = gameTick(ctx, g, msgs); err != nil {
+				g.Logger.Errorf("error in gametick: %s", err.Error())
+				cancel()
+				return
 			}
+
+			// Send messages back to players
+			if err = g.sendMessagesToPlayers(out); err != nil {
+				// TODO maybe
+				cancel()
+				return
+			}
+
+			msgs = nil
+
+		case msg := <-g.GameMessages:
+			//g.Logger.Infof("colleting msg from channel: %v", msg)
+			msgs = append(msgs, msg)
+			// TODO parse them
 		}
+	}
 
-		sgs.logger.Infof("game %s completed", g.ID)
-	}(game)
-
-	return
+	g.Logger.Infof("game %s completed", g.ID)
 }
 
-func waitForPlayers(g *Game, waitForPlayersTimeout int) (playerIDs []string, err error) {
+func (g *Game) waitForPlayers(waitForPlayersTimeout int) (playerIDs []string, err error) {
 	ctx, cancel := context.WithTimeout(g.Context, time.Duration(waitForPlayersTimeout)*time.Second)
 	defer cancel()
 
@@ -121,35 +135,6 @@ func waitForPlayers(g *Game, waitForPlayersTimeout int) (playerIDs []string, err
 			return
 		}
 	}
-}
-
-func (sgs *SimpleGameServer) joinGame(
-	gameID string,
-	playerID string,
-	wsconn *websocket.Conn,
-) (err error) {
-	// find the game instance with the given ID
-	var g *Game
-	var exists bool
-	sgs.Lock()
-	g, exists = sgs.games[gameID]
-	sgs.Unlock()
-	if !exists {
-		err = fmt.Errorf("failed to join game, gameID: %s. gameID not found", gameID)
-		wsconn.Close(WS_STATUS_INVALID_PARAMETERS, err.Error())
-		return
-	}
-
-	g.Lock()
-	currentNumPlayers := len(g.Players)
-	g.Unlock()
-	if currentNumPlayers >= g.NumPlayers {
-		err = fmt.Errorf("failed to join game, gameID: %s. game is full", gameID)
-		wsconn.Close(WS_STATUS_INVALID_PARAMETERS, err.Error())
-		return
-	}
-
-	return g.addPlayer(playerID, wsconn)
 }
 
 func (g *Game) addPlayer(playerID string, wsconn *websocket.Conn) (err error) {
@@ -220,5 +205,26 @@ func (g *Game) addPlayer(playerID string, wsconn *websocket.Conn) (err error) {
 
 	g.GameMessages <- NewPlayerJoinedMessage(p.ID)
 
+	return
+}
+
+func (g *Game) sendMessagesToPlayers(out map[string][]GameMessage) (err error) {
+
+	var p *Player
+	var exists bool
+	for playerID, msgs := range out {
+		if p, exists = g.Players[playerID]; !exists {
+			err = fmt.Errorf("no player in game with ID: %s", playerID)
+			return
+		}
+
+		for _, msg := range msgs {
+			if err = wsjson.Write(g.Context, p.WSConn, &msg); err != nil {
+				// TODO
+				g.Logger.Info("####### 22222")
+				return
+			}
+		}
+	}
 	return
 }
