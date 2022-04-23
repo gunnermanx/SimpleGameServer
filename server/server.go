@@ -22,6 +22,10 @@ import (
 // Joining/Leaving games
 // Relay messages between the server and clients
 
+const (
+	GRACEFUL_SHUTDOWN_TIME_S = 10
+)
+
 type SimpleGameServer struct {
 	config   *config.ServerConfig
 	serveMux *http.ServeMux
@@ -62,14 +66,17 @@ func New(
 	return
 }
 
+// Start the game server
 func (sgs *SimpleGameServer) Start() (err error) {
 	var listener net.Listener
-	if listener, err = net.Listen("tcp", fmt.Sprintf(":%s", sgs.config.Port)); err != nil {
+	// TODO remove localhost
+	if listener, err = net.Listen("tcp", fmt.Sprintf("localhost:%s", sgs.config.Port)); err != nil {
 		err = errors.Wrap(err, "failed to start game server")
 		sgs.logger.Error(err)
 		return
 	}
 
+	// Start the http server
 	errc := make(chan error, 1)
 	go func() {
 		sgs.logger.Infof("Starting game server on: %s", listener.Addr().String())
@@ -80,19 +87,19 @@ func (sgs *SimpleGameServer) Start() (err error) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt)
 	select {
-	case err := <-errc:
-		sgs.logger.Errorf("Failed to serve: %s", err.Error())
+	case err = <-errc:
+		sgs.logger.Errorf("failed to serve: %s", err.Error())
 	case sig := <-sigs:
-		sgs.logger.Errorf("Terminating on sig: %v", sig)
+		sgs.logger.Errorf("terminating on sig: %v", sig)
 	}
 
 	// Gracefully shutdown with timeout of 10s
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*GRACEFUL_SHUTDOWN_TIME_S)
 	defer cancel()
 	return sgs.server.Shutdown(ctx)
 }
 
-//
+// Register game logic for the server
 func (sgs *SimpleGameServer) RegisterGameLogic(gamelogic GameLogic) {
 	sgs.gameLogic = gamelogic
 }
@@ -103,12 +110,10 @@ func (sgs *SimpleGameServer) connect(playerID string) (err error) {
 
 	var exists bool
 	if _, exists = sgs.players[playerID]; !exists {
-		// log player creation/connection?
-		sgs.logger.Infof("player connected: %s", playerID)
-
+		sgs.logger.WithField("playerID", playerID).Infof("player connected to server")
 		sgs.players[playerID] = &Player{
 			ID: playerID,
-			// some other things, maybe pull once from db to get some info
+			// TODO some other things, maybe pull once from db to get some info
 		}
 	}
 	return
