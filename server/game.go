@@ -13,14 +13,17 @@ import (
 	"nhooyr.io/websocket/wsjson"
 )
 
-type GameLogic func(context.Context, *Game) error
+type GameLogic func(ctx context.Context, g *Game, playerIDs []string) error
 
 type Game struct {
+	sync.Mutex
+
 	ID      string
-	Players sync.Map
+	Players map[string]*Player
 	Context context.Context
 	Logger  *logrus.Entry
 
+	NumPlayers   int
 	GameMessages chan GameMessage
 }
 
@@ -29,13 +32,14 @@ type Player struct {
 	WSConn *websocket.Conn
 }
 
-func (sgs *SimpleGameServer) createGame() (game *Game, err error) {
+func (sgs *SimpleGameServer) createGame(numPlayers int) (game *Game, err error) {
 	// TODO need some form of protection here later
 
 	game = &Game{
 		ID:           uuid.New().String(),
-		Players:      sync.Map{},
+		Players:      make(map[string]*Player),
 		GameMessages: make(chan GameMessage),
+		NumPlayers:   numPlayers,
 	}
 	sgs.games[game.ID] = game
 	game.Logger = sgs.logger.WithFields(logrus.Fields{
@@ -43,15 +47,46 @@ func (sgs *SimpleGameServer) createGame() (game *Game, err error) {
 	})
 
 	// Create a goroutine to run the gamelogic
-	go func() {
+	go func(g *Game) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		game.Context = ctx
-		sgs.gameLogic(ctx, game)
-		sgs.logger.Infof("game %s completed", game.ID)
-	}()
+		g.Context = ctx
 
+		// Wait for players before starting game logic
+		sgs.logger.Debug("started waiting for players")
+		playerIDs := waitForPlayers(g)
+		sgs.logger.Debugf("finished waiting for players. p1: %s, p2: %s", playerIDs[0], playerIDs[1])
+
+		sgs.gameLogic(ctx, g, playerIDs)
+		sgs.logger.Infof("game %s completed", g.ID)
+	}(game)
+
+	return
+}
+
+func waitForPlayers(g *Game) (playerIDs []string) {
+	// TODO can add timeout
+	players := map[string]bool{}
+	for {
+		msg := <-g.GameMessages
+		if msg.Code == PLAYER_JOINED {
+			g.Logger.Debugf("player joined: %s", msg.Data.(string))
+			players[msg.Data.(string)] = true
+		} else if msg.Code == PLAYER_LEFT {
+			g.Logger.Debugf("player left: %s", msg.Data.(string))
+			delete(players, msg.Data.(string))
+		}
+		g.Lock()
+		currentNumPlayers := len(players)
+		g.Unlock()
+		if currentNumPlayers == g.NumPlayers {
+			break
+		}
+	}
+	for p := range players {
+		playerIDs = append(playerIDs, p)
+	}
 	return
 }
 
@@ -64,7 +99,16 @@ func (sgs *SimpleGameServer) joinGame(
 	var g *Game
 	var exists bool
 	if g, exists = sgs.games[gameID]; !exists {
-		err = fmt.Errorf("failed to join game, gameID: %s not found", gameID)
+		err = fmt.Errorf("failed to join game, gameID: %s. gameID not found", gameID)
+		wsconn.Close(WS_STATUS_INVALID_PARAMETERS, err.Error())
+		return
+	}
+
+	g.Lock()
+	currentNumPlayers := len(g.Players)
+	g.Unlock()
+	if currentNumPlayers >= g.NumPlayers {
+		err = fmt.Errorf("failed to join game, gameID: %s. game is full", gameID)
 		wsconn.Close(WS_STATUS_INVALID_PARAMETERS, err.Error())
 		return
 	}
@@ -79,16 +123,15 @@ func (g *Game) addPlayer(playerID string, wsconn *websocket.Conn) (err error) {
 	var p *Player
 	var exists bool
 
-	var val interface{}
-	if val, exists = g.Players.Load(playerID); !exists {
+	g.Lock()
+	if p, exists = g.Players[playerID]; !exists {
 		// log player creation?
 		p = &Player{
 			ID: playerID,
 		}
-		g.Players.Store(playerID, p)
-	} else {
-		p = val.(*Player)
+		g.Players[playerID] = p
 	}
+	g.Unlock()
 	p.WSConn = wsconn
 
 	// Create a goroutine to handle messages from the player

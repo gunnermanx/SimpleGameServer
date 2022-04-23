@@ -48,7 +48,7 @@ func New(
 		logger:       logger,
 		authProvider: ap,
 		datastore:    ds,
-		serveMux:     &http.ServeMux{},
+		serveMux:     http.NewServeMux(),
 		games:        make(map[string]*Game),
 		players:      make(map[string]*Player),
 	}

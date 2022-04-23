@@ -63,7 +63,19 @@ func (sgs *SimpleGameServer) createGameHandler(w http.ResponseWriter, r *http.Re
 	var err error
 	var game *Game
 
-	if game, err = sgs.createGame(); err != nil {
+	var statusCode int
+	var req CreateGameRequest
+	if statusCode, err = UnmarshalJSONRequestBody(w, r, &req); err != nil {
+		WriteErrorResponse(w, statusCode, err.Error())
+		return
+	}
+	sgs.logger.Infof("req: %v", req)
+	if req.NumPlayers == 0 {
+		WriteErrorResponse(w, http.StatusBadRequest, "numPlayers field is missing or 0")
+		return
+	}
+
+	if game, err = sgs.createGame(req.NumPlayers); err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
