@@ -7,8 +7,9 @@ import (
 )
 
 type ServerConfig struct {
-	DebugMode bool
-	Port      string
+	DebugMode      bool
+	Port           string
+	TickIntervalMS int
 }
 
 func LoadServerConfig() (sc *ServerConfig, err error) {
@@ -22,8 +23,9 @@ func LoadServerConfig() (sc *ServerConfig, err error) {
 	}
 
 	sc = &ServerConfig{
-		Port:      viper.GetString("server.port"),
-		DebugMode: viper.GetBool("server.debugMode"),
+		Port:           viper.GetString("server.port"),
+		DebugMode:      viper.GetBool("server.debugMode"),
+		TickIntervalMS: viper.GetInt("server.tickIntervalMS"),
 	}
 
 	return

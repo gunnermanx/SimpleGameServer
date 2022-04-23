@@ -41,7 +41,7 @@ type SimpleGameServer struct {
 	datastore    datastore.Datastore
 	authProvider auth.AuthProvider
 
-	gameLogic GameLogic
+	gameTick GameTick
 }
 
 func New(
@@ -103,8 +103,8 @@ func (sgs *SimpleGameServer) Start() (err error) {
 }
 
 // Register game logic for the server
-func (sgs *SimpleGameServer) RegisterGameLogic(gamelogic GameLogic) {
-	sgs.gameLogic = gamelogic
+func (sgs *SimpleGameServer) RegisterGameLogic(gamelogic GameTick) {
+	sgs.gameTick = gamelogic
 }
 
 func (sgs *SimpleGameServer) connect(playerID string) (err error) {

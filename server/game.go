@@ -14,7 +14,7 @@ import (
 	"nhooyr.io/websocket/wsjson"
 )
 
-type GameLogic func(ctx context.Context, g *Game, playerIDs []string) error
+type GameTick func(ctx context.Context, g *Game, msgs []GameMessage) error
 
 type Game struct {
 	sync.Mutex
@@ -70,8 +70,25 @@ func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout in
 
 		// Send GameReady message to all players
 
-		// Run game logic
-		sgs.gameLogic(ctx, g, playerIDs)
+		// Basic game loop:
+		ticker := time.NewTicker(time.Duration(sgs.config.TickIntervalMS) * time.Millisecond)
+		msgs := []GameMessage{}
+		for {
+			select {
+			case <-ticker.C:
+
+				// Run the gameTick
+				sgs.gameTick(ctx, g, msgs)
+
+				msgs = nil
+
+			case msg := <-g.GameMessages:
+				g.Logger.Infof("colleting msg from channel: %v", msg)
+				msgs = append(msgs, msg)
+				// TODO parse them
+			}
+		}
+
 		sgs.logger.Infof("game %s completed", g.ID)
 	}(game)
 
