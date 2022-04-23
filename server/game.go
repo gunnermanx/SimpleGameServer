@@ -60,6 +60,7 @@ func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout in
 		sgs.logger.Debug("started waiting for players")
 		if playerIDs, err = waitForPlayers(g, waitForPlayersTimeout); err != nil {
 			sgs.logger.Errorf("failed waiting for players: %s", err.Error())
+			cancel()
 			return
 		}
 		sgs.logger.Debugf("finished waiting for players. p1: %s, p2: %s", playerIDs[0], playerIDs[1])
@@ -73,7 +74,7 @@ func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout in
 }
 
 func waitForPlayers(g *Game, waitForPlayersTimeout int) (playerIDs []string, err error) {
-	ctx, cancel := context.WithTimeout(g.Context, time.Duration(waitForPlayersTimeout)*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(waitForPlayersTimeout)*time.Second)
 	defer cancel()
 
 	players := map[string]bool{}
