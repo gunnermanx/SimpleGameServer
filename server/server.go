@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"time"
 
 	"github.com/gunnermanx/simplegameserver/auth"
@@ -27,6 +28,8 @@ const (
 )
 
 type SimpleGameServer struct {
+	sync.Mutex
+
 	config   *config.ServerConfig
 	serveMux *http.ServeMux
 	server   *http.Server

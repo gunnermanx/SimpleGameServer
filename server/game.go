@@ -42,10 +42,13 @@ func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout in
 		GameMessages: make(chan GameMessage),
 		NumPlayers:   numPlayers,
 	}
-	sgs.games[game.ID] = game
 	game.Logger = sgs.logger.WithFields(logrus.Fields{
 		"gameID": game.ID,
 	})
+
+	sgs.Lock()
+	sgs.games[game.ID] = game
+	sgs.Unlock()
 
 	// Create a goroutine to run the gamelogic
 	go func(g *Game) {
@@ -111,7 +114,10 @@ func (sgs *SimpleGameServer) joinGame(
 	// find the game instance with the given ID
 	var g *Game
 	var exists bool
-	if g, exists = sgs.games[gameID]; !exists {
+	sgs.Lock()
+	g, exists = sgs.games[gameID]
+	sgs.Unlock()
+	if !exists {
 		err = fmt.Errorf("failed to join game, gameID: %s. gameID not found", gameID)
 		wsconn.Close(WS_STATUS_INVALID_PARAMETERS, err.Error())
 		return
