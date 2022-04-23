@@ -137,6 +137,10 @@ func (g *Game) addPlayer(playerID string, wsconn *websocket.Conn) (err error) {
 			game.Logger.WithField(
 				"playerID", player.ID,
 			).Infof("stopped listening on wsconn")
+
+			// TODO verify this works correct
+			delete(game.Players, player.ID)
+
 			game.GameMessages <- NewPlayerLeftMessage(player.ID)
 		}()
 
