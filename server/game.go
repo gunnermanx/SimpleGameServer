@@ -49,9 +49,9 @@ func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout in
 
 	// Create a goroutine to run the gamelogic
 	go func(g *Game) {
+		// Create a new context for the game
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-
 		g.Context = ctx
 
 		// Wait for players before starting game logic
@@ -65,6 +65,8 @@ func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout in
 		}
 		sgs.logger.Debugf("finished waiting for players. p1: %s, p2: %s", playerIDs[0], playerIDs[1])
 
+		// Send GameReady message to all players
+
 		// Run game logic
 		sgs.gameLogic(ctx, g, playerIDs)
 		sgs.logger.Infof("game %s completed", g.ID)
@@ -74,7 +76,7 @@ func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout in
 }
 
 func waitForPlayers(g *Game, waitForPlayersTimeout int) (playerIDs []string, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(waitForPlayersTimeout)*time.Second)
+	ctx, cancel := context.WithTimeout(g.Context, time.Duration(waitForPlayersTimeout)*time.Second)
 	defer cancel()
 
 	players := map[string]bool{}

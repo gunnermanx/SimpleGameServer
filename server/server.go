@@ -12,6 +12,7 @@ import (
 	"github.com/gunnermanx/simplegameserver/auth"
 	"github.com/gunnermanx/simplegameserver/config"
 	"github.com/gunnermanx/simplegameserver/datastore"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -64,7 +65,8 @@ func New(
 func (sgs *SimpleGameServer) Start() (err error) {
 	var listener net.Listener
 	if listener, err = net.Listen("tcp", fmt.Sprintf(":%s", sgs.config.Port)); err != nil {
-		sgs.logger.Errorf("Failed to start game server: %s", err.Error())
+		err = errors.Wrap(err, "failed to start game server")
+		sgs.logger.Error(err)
 		return
 	}
 
@@ -90,6 +92,7 @@ func (sgs *SimpleGameServer) Start() (err error) {
 	return sgs.server.Shutdown(ctx)
 }
 
+//
 func (sgs *SimpleGameServer) RegisterGameLogic(gamelogic GameLogic) {
 	sgs.gameLogic = gamelogic
 }
