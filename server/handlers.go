@@ -22,6 +22,10 @@ const (
 	WS_STATUS_INVALID_PARAMETERS = 4000
 )
 
+const (
+	DEFAULT_WAIT_FOR_PLAYERS_TIMEOUT_S = 60
+)
+
 func (sgs *SimpleGameServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), REQUEST_TIMEOUT_S*time.Second)
 	defer cancel()
@@ -69,13 +73,15 @@ func (sgs *SimpleGameServer) createGameHandler(w http.ResponseWriter, r *http.Re
 		WriteErrorResponse(w, statusCode, err.Error())
 		return
 	}
-	sgs.logger.Infof("req: %v", req)
 	if req.NumPlayers == 0 {
 		WriteErrorResponse(w, http.StatusBadRequest, "numPlayers field is missing or 0")
 		return
 	}
+	if req.WaitForPlayersTimeout == 0 {
+		req.WaitForPlayersTimeout = DEFAULT_WAIT_FOR_PLAYERS_TIMEOUT_S
+	}
 
-	if game, err = sgs.createGame(req.NumPlayers); err != nil {
+	if game, err = sgs.createGame(req.NumPlayers, req.WaitForPlayersTimeout); err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}

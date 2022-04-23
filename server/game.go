@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
@@ -32,7 +33,7 @@ type Player struct {
 	WSConn *websocket.Conn
 }
 
-func (sgs *SimpleGameServer) createGame(numPlayers int) (game *Game, err error) {
+func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout int) (game *Game, err error) {
 	// TODO need some form of protection here later
 
 	game = &Game{
@@ -54,10 +55,16 @@ func (sgs *SimpleGameServer) createGame(numPlayers int) (game *Game, err error) 
 		g.Context = ctx
 
 		// Wait for players before starting game logic
+		var playerIDs []string
+		var err error
 		sgs.logger.Debug("started waiting for players")
-		playerIDs := waitForPlayers(g)
+		if playerIDs, err = waitForPlayers(g, waitForPlayersTimeout); err != nil {
+			sgs.logger.Errorf("failed waiting for players: %s", err.Error())
+			return
+		}
 		sgs.logger.Debugf("finished waiting for players. p1: %s, p2: %s", playerIDs[0], playerIDs[1])
 
+		// Run game logic
 		sgs.gameLogic(ctx, g, playerIDs)
 		sgs.logger.Infof("game %s completed", g.ID)
 	}(game)
@@ -65,26 +72,32 @@ func (sgs *SimpleGameServer) createGame(numPlayers int) (game *Game, err error) 
 	return
 }
 
-func waitForPlayers(g *Game) (playerIDs []string) {
-	// TODO can add timeout
+func waitForPlayers(g *Game, waitForPlayersTimeout int) (playerIDs []string, err error) {
+	ctx, cancel := context.WithTimeout(g.Context, time.Duration(waitForPlayersTimeout)*time.Second)
+	defer cancel()
+
 	players := map[string]bool{}
 	for {
-		msg := <-g.GameMessages
-		if msg.Code == PLAYER_JOINED {
-			g.Logger.Debugf("player joined: %s", msg.Data.(string))
-			players[msg.Data.(string)] = true
-		} else if msg.Code == PLAYER_LEFT {
-			g.Logger.Debugf("player left: %s", msg.Data.(string))
-			delete(players, msg.Data.(string))
-		}
-		if len(players) == g.NumPlayers {
-			break
+		select {
+		case msg := <-g.GameMessages:
+			if msg.Code == PLAYER_JOINED {
+				g.Logger.Debugf("player joined: %s", msg.Data.(string))
+				players[msg.Data.(string)] = true
+			} else if msg.Code == PLAYER_LEFT {
+				g.Logger.Debugf("player left: %s", msg.Data.(string))
+				delete(players, msg.Data.(string))
+			}
+			if len(players) == g.NumPlayers {
+				for p := range players {
+					playerIDs = append(playerIDs, p)
+				}
+				return
+			}
+		case <-ctx.Done():
+			err = fmt.Errorf("game ended due to lack of players")
+			return
 		}
 	}
-	for p := range players {
-		playerIDs = append(playerIDs, p)
-	}
-	return
 }
 
 func (sgs *SimpleGameServer) joinGame(

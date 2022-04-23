@@ -10,15 +10,13 @@ import (
 )
 
 type CreateGameRequest struct {
-	NumPlayers int `json:"numPlayers"`
+	NumPlayers            int `json:"numPlayers"`
+	WaitForPlayersTimeout int `json:"waitForPlayersTimeout"`
 }
 
 type ResponseData map[string]string
 
 func UnmarshalJSONRequestBody(w http.ResponseWriter, r *http.Request, dst interface{}) (statusCode int, err error) {
-	// body, _ := ioutil.ReadAll(r.Body)
-	// fmt.Printf("body %v", string(body))
-
 	r.Body = http.MaxBytesReader(w, r.Body, 524288)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
