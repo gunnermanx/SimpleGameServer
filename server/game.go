@@ -77,10 +77,7 @@ func waitForPlayers(g *Game) (playerIDs []string) {
 			g.Logger.Debugf("player left: %s", msg.Data.(string))
 			delete(players, msg.Data.(string))
 		}
-		g.Lock()
-		currentNumPlayers := len(players)
-		g.Unlock()
-		if currentNumPlayers == g.NumPlayers {
+		if len(players) == g.NumPlayers {
 			break
 		}
 	}
