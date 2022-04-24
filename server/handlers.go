@@ -96,7 +96,7 @@ func (sgs *SimpleGameServer) joinGameHandler(w http.ResponseWriter, r *http.Requ
 
 	var wsconn *websocket.Conn
 	if wsconn, err = websocket.Accept(w, r, nil); err != nil {
-		sgs.logger.Infof("failed to accept connection %w", err)
+		sgs.logger.Infof("failed to accept connection %s", err)
 		return
 	}
 

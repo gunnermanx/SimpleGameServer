@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
@@ -28,11 +29,20 @@ type Game struct {
 	Data interface{}
 }
 
-// Player models a player connected to a game
-// and contains the websocket connection used to communicate between the client and server
-type Player struct {
-	ID     string
-	WSConn *websocket.Conn
+func NewGame(
+	logger *logrus.Logger,
+	maxPlayers int,
+) (game *Game) {
+	game = &Game{
+		ID:           uuid.New().String(),
+		Players:      make(map[string]*Player),
+		GameMessages: make(chan GameMessage),
+		NumPlayers:   maxPlayers,
+	}
+	game.Logger = logger.WithFields(logrus.Fields{
+		"gameID": game.ID,
+	})
+	return
 }
 
 // run will run the code for a game instance
@@ -56,7 +66,7 @@ func (g *Game) run(
 	var playerIDs []string
 	var err error
 	g.Logger.Debug("started waiting for players")
-	if playerIDs, err = g.waitForPlayers(waitForPlayersTimeout); err != nil {
+	if playerIDs, err = g.WaitForPlayers(waitForPlayersTimeout); err != nil {
 		g.Logger.Errorf("failed waiting for players: %s", err.Error())
 		cancel()
 		return
@@ -109,7 +119,7 @@ func (g *Game) run(
 	g.Logger.Infof("game %s completed", g.ID)
 }
 
-func (g *Game) waitForPlayers(waitForPlayersTimeout int) (playerIDs []string, err error) {
+func (g *Game) WaitForPlayers(waitForPlayersTimeout int) (playerIDs []string, err error) {
 	ctx, cancel := context.WithTimeout(g.Context, time.Duration(waitForPlayersTimeout)*time.Second)
 	defer cancel()
 
@@ -131,7 +141,7 @@ func (g *Game) waitForPlayers(waitForPlayersTimeout int) (playerIDs []string, er
 				return
 			}
 		case <-ctx.Done():
-			err = fmt.Errorf("game ended due to lack of players")
+			err = ErrTimedoutWaitingForPlayers
 			return
 		}
 	}
@@ -191,7 +201,7 @@ func (g *Game) addPlayer(playerID string, wsconn *websocket.Conn) (err error) {
 						wsconn.Close(websocket.StatusNormalClosure, "socket closed")
 						return
 					} else {
-						game.Logger.Errorf("err reading message: %w", err)
+						game.Logger.Errorf("err reading message: %s", err)
 						wsconn.Close(websocket.StatusUnsupportedData, "bad msg")
 						return
 					}

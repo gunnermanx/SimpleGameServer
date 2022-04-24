@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/gunnermanx/simplegameserver/auth"
 	"github.com/gunnermanx/simplegameserver/config"
 	"github.com/gunnermanx/simplegameserver/datastore"
@@ -148,15 +147,7 @@ func (sgs *SimpleGameServer) connect(playerID string) (err error) {
 // createGame creates and runs a game instance on the server
 func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout int) (game *Game, err error) {
 	// TODO need some form of protection here later
-	game = &Game{
-		ID:           uuid.New().String(),
-		Players:      make(map[string]*Player),
-		GameMessages: make(chan GameMessage),
-		NumPlayers:   numPlayers,
-	}
-	game.Logger = sgs.logger.WithFields(logrus.Fields{
-		"gameID": game.ID,
-	})
+	game = NewGame(sgs.logger, numPlayers)
 	sgs.Lock()
 	sgs.games[game.ID] = game
 	sgs.Unlock()
