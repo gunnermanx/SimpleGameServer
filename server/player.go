@@ -8,3 +8,4 @@ type Player struct {
 	ID     string
 	WSConn *websocket.Conn
 }
+

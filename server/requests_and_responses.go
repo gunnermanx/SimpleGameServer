@@ -26,7 +26,9 @@ func UnmarshalJSONRequestBody(w http.ResponseWriter, r *http.Request, dst interf
 		var syntaxError *json.SyntaxError
 		switch {
 		case errors.As(err, &unmarshalTypeError):
+			fallthrough
 		case errors.As(err, &syntaxError):
+			fallthrough
 		case errors.Is(err, io.ErrUnexpectedEOF):
 			err = fmt.Errorf("request body contains invalid JSON")
 			statusCode = http.StatusBadRequest
