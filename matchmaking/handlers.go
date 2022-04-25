@@ -38,12 +38,20 @@ func (sms *SimpleMatchmakingServer) setupHandlers() {
 }
 
 func (sms *SimpleMatchmakingServer) findMatchHandler(w http.ResponseWriter, r *http.Request) {
-	// var err error
-	// var playerID string
-	// if playerID, err = sgs.authProvider.GetUIDFromRequest(r); err != nil {
-	// 	common.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
-	// 	return
-	// }
+	var err error
+	var playerID string
+	if playerID, err = sms.authProvider.GetUIDFromRequest(r); err != nil {
+		common.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	var player *MatchmakingPlayer
+	if player, err = sms.GetPlayer(playerID); err != nil {
+
+	}
+
+	_ = player
+
 	// if sgs.connect(playerID); err != nil {
 	// 	common.WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 	// 	return

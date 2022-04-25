@@ -13,6 +13,7 @@ import (
 	"github.com/gunnermanx/simplegameserver/auth"
 	"github.com/gunnermanx/simplegameserver/config"
 	"github.com/gunnermanx/simplegameserver/datastore"
+	"github.com/gunnermanx/simplegameserver/matchmaking/strategy"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -22,8 +23,6 @@ const (
 )
 
 type SimpleMatchmakingServer struct {
-	sync.Mutex
-
 	config   *config.MatchmakingServerConfig
 	serveMux *http.ServeMux
 	server   *http.Server
@@ -31,11 +30,19 @@ type SimpleMatchmakingServer struct {
 
 	datastore    datastore.Datastore
 	authProvider auth.AuthProvider
+
+	strategy strategy.Strategy
+
+	players            map[string]*MatchmakingPlayer
+	playersMutex       sync.Mutex
+	queuedPlayers      map[int][]*MatchmakingPlayer
+	queuedPlayersMutex sync.Mutex
 }
 
 func New(
 	conf *config.MatchmakingServerConfig,
 	logger *logrus.Logger,
+	strat strategy.Strategy,
 	ap auth.AuthProvider,
 	ds datastore.Datastore,
 ) (s *SimpleMatchmakingServer) {
@@ -45,6 +52,7 @@ func New(
 		logger:       logger,
 		authProvider: ap,
 		datastore:    ds,
+		strategy:     strat,
 		serveMux:     http.NewServeMux(),
 	}
 
@@ -69,7 +77,7 @@ func (sms *SimpleMatchmakingServer) Start() (err error) {
 	// Start the http server
 	errc := make(chan error, 1)
 	go func() {
-		sms.logger.Infof("Starting game server on: %s", listener.Addr().String())
+		sms.logger.Infof("Starting matchmaking server on: %s", listener.Addr().String())
 		errc <- sms.server.Serve(listener)
 	}()
 

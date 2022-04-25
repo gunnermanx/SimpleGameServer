@@ -5,5 +5,6 @@ import (
 )
 
 type Datastore interface {
-	FindUser() (model.User, error)
+	FindUser(playerID string) (model.User, error)
+	FindMatchmakingData(playerID string) (model.MatchmakingData, error)
 }
