@@ -1,4 +1,4 @@
-package server_test
+package game_test
 
 import (
 	"testing"

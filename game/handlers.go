@@ -1,10 +1,11 @@
-package server
+package game
 
 import (
 	"context"
 	"net/http"
 	"time"
 
+	"github.com/gunnermanx/simplegameserver/common"
 	"nhooyr.io/websocket"
 )
 
@@ -32,7 +33,7 @@ func (sgs *SimpleGameServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	if ctx, err = sgs.authProvider.AuthenticateRequest(ctx, r); err != nil {
-		WriteErrorResponse(w, http.StatusUnauthorized, err.Error())
+		common.WriteErrorResponse(w, http.StatusUnauthorized, err.Error())
 		return
 	}
 	sgs.serveMux.ServeHTTP(w, r.WithContext(ctx))
@@ -53,14 +54,14 @@ func (sgs *SimpleGameServer) connectHandler(w http.ResponseWriter, r *http.Reque
 	var err error
 	var playerID string
 	if playerID, err = sgs.authProvider.GetUIDFromRequest(r); err != nil {
-		WriteErrorResponse(w, http.StatusBadRequest, err.Error())
+		common.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if sgs.connect(playerID); err != nil {
-		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+		common.WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	WriteResponse(w, http.StatusOK, ResponseData{})
+	common.WriteResponse(w, http.StatusOK, common.ResponseData{})
 }
 
 func (sgs *SimpleGameServer) createGameHandler(w http.ResponseWriter, r *http.Request) {
@@ -69,12 +70,12 @@ func (sgs *SimpleGameServer) createGameHandler(w http.ResponseWriter, r *http.Re
 
 	var statusCode int
 	var req CreateGameRequest
-	if statusCode, err = UnmarshalJSONRequestBody(w, r, &req); err != nil {
-		WriteErrorResponse(w, statusCode, err.Error())
+	if statusCode, err = common.UnmarshalJSONRequestBody(w, r, &req); err != nil {
+		common.WriteErrorResponse(w, statusCode, err.Error())
 		return
 	}
 	if req.NumPlayers == 0 {
-		WriteErrorResponse(w, http.StatusBadRequest, "numPlayers field is missing or 0")
+		common.WriteErrorResponse(w, http.StatusBadRequest, "numPlayers field is missing or 0")
 		return
 	}
 	if req.WaitForPlayersTimeout == 0 {
@@ -82,11 +83,11 @@ func (sgs *SimpleGameServer) createGameHandler(w http.ResponseWriter, r *http.Re
 	}
 
 	if game, err = sgs.createGame(req.NumPlayers, req.WaitForPlayersTimeout); err != nil {
-		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+		common.WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	WriteResponse(w, http.StatusCreated, ResponseData{
+	common.WriteResponse(w, http.StatusCreated, common.ResponseData{
 		"gameID": game.ID,
 	})
 }
@@ -103,7 +104,7 @@ func (sgs *SimpleGameServer) joinGameHandler(w http.ResponseWriter, r *http.Requ
 	// TODO get playerID from context later on
 	var playerID string
 	if playerID, err = sgs.authProvider.GetUIDFromRequest(r); err != nil {
-		WriteErrorResponse(w, http.StatusBadRequest, err.Error())
+		common.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	gameID := r.URL.Query().Get("id")

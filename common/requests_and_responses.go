@@ -1,4 +1,4 @@
-package server
+package common
 
 import (
 	"encoding/json"
@@ -8,11 +8,6 @@ import (
 	"net/http"
 	"strings"
 )
-
-type CreateGameRequest struct {
-	NumPlayers            int `json:"numPlayers"`
-	WaitForPlayersTimeout int `json:"waitForPlayersTimeout"`
-}
 
 type ResponseData map[string]string
 

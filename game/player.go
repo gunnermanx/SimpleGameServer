@@ -1,4 +1,4 @@
-package server
+package game
 
 import "nhooyr.io/websocket"
 
@@ -8,4 +8,3 @@ type Player struct {
 	ID     string
 	WSConn *websocket.Conn
 }
-

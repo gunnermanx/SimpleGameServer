@@ -1,4 +1,4 @@
-package server
+package game
 
 import (
 	"context"
@@ -45,7 +45,7 @@ type GameTick func(ctx context.Context, g *Game, msgs []GameMessage) (map[string
 type SimpleGameServer struct {
 	sync.Mutex
 
-	config   *config.ServerConfig
+	config   *config.GameServerConfig
 	serveMux *http.ServeMux
 	server   *http.Server
 	logger   *logrus.Logger
@@ -61,7 +61,7 @@ type SimpleGameServer struct {
 }
 
 func New(
-	conf *config.ServerConfig,
+	conf *config.GameServerConfig,
 	logger *logrus.Logger,
 	ap auth.AuthProvider,
 	ds datastore.Datastore,

@@ -1,4 +1,4 @@
-package server
+package game
 
 const (
 	PLAYER_JOINED = 10
