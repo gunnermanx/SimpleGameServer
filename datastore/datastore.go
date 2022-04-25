@@ -6,5 +6,4 @@ import (
 
 type Datastore interface {
 	FindUser() (model.User, error)
-	RegisterUser()
 }

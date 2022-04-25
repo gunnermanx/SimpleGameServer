@@ -2,7 +2,13 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net/http"
+)
+
+var (
+	ErrUnauthorized    = errors.New("unauthorized")
+	ErrUnknownIdentity = errors.New("no identity")
 )
 
 type authedctxkey int
