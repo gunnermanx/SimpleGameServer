@@ -170,4 +170,85 @@ func TestGame(t *testing.T) {
 		})
 
 	})
+
+	t.Run("send messages to players", func(t *testing.T) {
+
+		t.Run("two players write messages", func(t *testing.T) {
+			g = NewGame(logger, 2)
+
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+			mockPlayer1 := mocks.NewMockGamePlayer(mockCtrl)
+			mockPlayer2 := mocks.NewMockGamePlayer(mockCtrl)
+
+			g.Players[p1_id] = mockPlayer1
+			g.Players[p2_id] = mockPlayer2
+
+			msg1 := messages.GameMessage{
+				Code: 123,
+				Data: 1,
+			}
+			msg2 := messages.GameMessage{
+				Code: 123,
+				Data: 2,
+			}
+
+			msgsToSend := make(map[string][]messages.GameMessage)
+			msgsToSend[p1_id] = append(msgsToSend[p1_id], msg1, msg2)
+			msgsToSend[p2_id] = append(msgsToSend[p2_id], msg1)
+
+			mockPlayer1.EXPECT().Write(msg1).Return(nil).Times(1)
+			mockPlayer1.EXPECT().Write(msg2).Return(nil).Times(1)
+			mockPlayer2.EXPECT().Write(msg1).Return(nil).Times(1)
+			mockPlayer2.EXPECT().Write(msg2).Return(nil).Times(0)
+
+			err := g.sendMessagesToPlayers(msgsToSend)
+			require.NoError(t, err)
+		})
+
+		t.Run("no player in game with ID exists", func(t *testing.T) {
+			g = NewGame(logger, 2)
+
+			msg1 := messages.GameMessage{
+				Code: 123,
+				Data: 1,
+			}
+
+			msgsToSend := make(map[string][]messages.GameMessage)
+			msgsToSend[p1_id] = append(msgsToSend[p1_id], msg1)
+			expectedErr := fmt.Errorf("no player in game with ID: %s", p1_id)
+
+			err := g.sendMessagesToPlayers(msgsToSend)
+			require.EqualError(t, err, expectedErr.Error())
+		})
+
+		t.Run("player.Write returns error", func(t *testing.T) {
+			g = NewGame(logger, 2)
+
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+			mockPlayer := mocks.NewMockGamePlayer(mockCtrl)
+			mockPlayer.EXPECT().GetID().Return(p1_id).AnyTimes()
+
+			g.Players[p1_id] = mockPlayer
+
+			msg1 := messages.GameMessage{
+				Code: 123,
+				Data: 1,
+			}
+			msg2 := messages.GameMessage{
+				Code: 123,
+				Data: 2,
+			}
+
+			msgsToSend := make(map[string][]messages.GameMessage)
+			msgsToSend[p1_id] = append(msgsToSend[p1_id], msg1, msg2)
+			expectedErr := fmt.Errorf("some error")
+
+			mockPlayer.EXPECT().Write(msg1).Return(expectedErr).Times(1)
+
+			err := g.sendMessagesToPlayers(msgsToSend)
+			require.ErrorIs(t, err, expectedErr)
+		})
+	})
 }
