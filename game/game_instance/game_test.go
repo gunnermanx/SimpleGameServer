@@ -14,28 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// type MockGamePlayer struct {
-// 	ID string
-// }
-
-// func (m *MockGamePlayer) GetID() string {
-// 	return m.ID
-// }
-// func (m *MockGamePlayer) GetContext() context.Context {
-// 	return context.Background()
-// }
-// func (m *MockGamePlayer) Read() (messages.GameMessage, error) {
-// 	return messages.GameMessage{
-// 		Code: 1234,
-// 		Data: "test",
-// 	}, nil
-// }
-// func (m *MockGamePlayer) Write(messages.GameMessage) error {
-
-// }
-// func (m *MockGamePlayer) CloseConnection()
-// func (m *MockGamePlayer) CloseConnectionWithError(error)
-
 func TestGame(t *testing.T) {
 
 	p1_id := "p1_id"
