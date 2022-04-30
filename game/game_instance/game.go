@@ -28,7 +28,7 @@ type GameTick func(
 	ctx context.Context,
 	g *Game,
 	msgs []messages.GameMessage,
-) (map[string][]messages.GameMessage, error)
+) (bool, map[string][]messages.GameMessage, error)
 
 // Game models a game running on the game server
 type Game struct {
@@ -103,6 +103,7 @@ func (g *Game) Run(
 	if out, err = gameInit(g.Context, g, playerIDs); err != nil {
 		g.Logger.Errorf("error in gameinit: %s", err.Error())
 		g.Cancel()
+		return
 	}
 	if err = g.sendMessagesToPlayers(out); err != nil {
 		// TODO maybe
@@ -113,13 +114,15 @@ func (g *Game) Run(
 	// simple game loop:
 	ticker := time.NewTicker(time.Duration(tickIntervalMS) * time.Millisecond)
 	msgs := []messages.GameMessage{}
-	for {
+	var complete bool
+	for !complete {
 		select {
 		case <-ticker.C:
 
 			// Run the gameTick
+
 			var out map[string][]messages.GameMessage
-			if out, err = gameTick(g.Context, g, msgs); err != nil {
+			if complete, out, err = gameTick(g.Context, g, msgs); err != nil {
 				g.Logger.Errorf("error in gametick: %s", err.Error())
 				g.Cancel()
 				return

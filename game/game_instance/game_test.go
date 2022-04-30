@@ -10,10 +10,115 @@ import (
 	errors "github.com/gunnermanx/simplegameserver/game/errors"
 	messages "github.com/gunnermanx/simplegameserver/game/game_instance/messages"
 	"github.com/gunnermanx/simplegameserver/game/mocks"
+	"github.com/stretchr/testify/require"
 
 	"github.com/sirupsen/logrus"
-	"github.com/stretchr/testify/require"
 )
+
+func TestRunGame(t *testing.T) {
+	p1_id := "p1_id"
+	p2_id := "p2_id"
+
+	logger := logrus.New()
+	var g *Game
+
+	t.Run("run game", func(t *testing.T) {
+		g = NewGame(logger, 2)
+
+		mockCtrl := gomock.NewController(t)
+		defer mockCtrl.Finish()
+		mockPlayer1 := mocks.NewMockGamePlayer(mockCtrl)
+		mockPlayer2 := mocks.NewMockGamePlayer(mockCtrl)
+
+		playerMsg := messages.GameMessage{
+			Code: 123,
+			Data: "foo",
+		}
+
+		mockPlayer1.EXPECT().GetID().Return(p1_id).AnyTimes()
+		mockPlayer2.EXPECT().GetID().Return(p2_id).AnyTimes()
+
+		player1Ctx, _ := context.WithCancel(context.Background())
+		mockPlayer1.EXPECT().GetContext().Return(player1Ctx).AnyTimes()
+		player2Ctx, _ := context.WithCancel(context.Background())
+		mockPlayer2.EXPECT().GetContext().Return(player2Ctx).AnyTimes()
+
+		mockPlayer1.EXPECT().Read().Return(playerMsg, nil).AnyTimes()
+		mockPlayer2.EXPECT().Read().Return(playerMsg, nil).AnyTimes()
+
+		gameInit := func(
+			ctx context.Context, g *Game, playerIDs []string,
+		) (out map[string][]messages.GameMessage, err error) {
+			gameData := make(map[string]interface{})
+			gameData["counter"] = 0
+			gameData["foo"] = "bar"
+			g.Data = gameData
+			return
+		}
+		gameTick := func(
+			ctx context.Context, g *Game, msgs []messages.GameMessage,
+		) (complete bool, out map[string][]messages.GameMessage, err error) {
+			gameData := g.Data.(map[string]interface{})
+			counter := gameData["counter"].(int) + 1
+			gameData["counter"] = counter
+			complete = counter > 10
+			return
+		}
+
+		go g.AddPlayer(mockPlayer1)
+		go g.AddPlayer(mockPlayer2)
+
+		g.Run(gameInit, gameTick, 50, 5, nil)
+
+		gameData := g.Data.(map[string]interface{})
+		require.Equal(t, 11, gameData["counter"])
+		require.Equal(t, "bar", gameData["foo"])
+	})
+
+	t.Run("game init errors out", func(t *testing.T) {
+		g = NewGame(logger, 2)
+
+		mockCtrl := gomock.NewController(t)
+		defer mockCtrl.Finish()
+		mockPlayer1 := mocks.NewMockGamePlayer(mockCtrl)
+		mockPlayer2 := mocks.NewMockGamePlayer(mockCtrl)
+
+		playerMsg := messages.GameMessage{
+			Code: 123,
+			Data: "foo",
+		}
+
+		mockPlayer1.EXPECT().GetID().Return(p1_id).AnyTimes()
+		mockPlayer2.EXPECT().GetID().Return(p2_id).AnyTimes()
+
+		player1Ctx, _ := context.WithCancel(context.Background())
+		mockPlayer1.EXPECT().GetContext().Return(player1Ctx).AnyTimes()
+		player2Ctx, _ := context.WithCancel(context.Background())
+		mockPlayer2.EXPECT().GetContext().Return(player2Ctx).AnyTimes()
+
+		mockPlayer1.EXPECT().Read().Return(playerMsg, nil).AnyTimes()
+		mockPlayer2.EXPECT().Read().Return(playerMsg, nil).AnyTimes()
+
+		gameInit := func(
+			ctx context.Context, g *Game, playerIDs []string,
+		) (out map[string][]messages.GameMessage, err error) {
+			err = fmt.Errorf("some error in gameinit")
+			return
+		}
+		gameTick := func(
+			ctx context.Context, g *Game, msgs []messages.GameMessage,
+		) (complete bool, out map[string][]messages.GameMessage, err error) {
+			return
+		}
+
+		go g.AddPlayer(mockPlayer1)
+		go g.AddPlayer(mockPlayer2)
+
+		g.Run(gameInit, gameTick, 50, 5, nil)
+
+		<-g.Context.Done()
+	})
+}
 
 func TestGame(t *testing.T) {
 
