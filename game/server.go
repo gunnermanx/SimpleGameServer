@@ -13,9 +13,13 @@ import (
 	"github.com/gunnermanx/simplegameserver/auth"
 	"github.com/gunnermanx/simplegameserver/config"
 	"github.com/gunnermanx/simplegameserver/datastore"
+
+	sgs_errors "github.com/gunnermanx/simplegameserver/game/errors"
+	game "github.com/gunnermanx/simplegameserver/game/game_instance"
+	player "github.com/gunnermanx/simplegameserver/game/game_instance/player"
+
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"nhooyr.io/websocket"
 )
 
 // The server should handle the following responsibilities
@@ -27,14 +31,6 @@ import (
 const (
 	GRACEFUL_SHUTDOWN_TIME_S = 10
 )
-
-// GameInit is called when a game instance on the server is created
-// This should be implemented by a concrete game server and added to the server using WithGameInit
-type GameInit func(ctx context.Context, g *Game, playerIDs []string) (map[string][]GameMessage, error)
-
-// GameTick is called once every server tick and defines the behavior of the game server
-// This should be implemented by a concrete game server and added to the server using WithGameTick
-type GameTick func(ctx context.Context, g *Game, msgs []GameMessage) (map[string][]GameMessage, error)
 
 // SimpleGameServer encapsulates the functionality of a simple game server
 //
@@ -48,16 +44,16 @@ type SimpleGameServer struct {
 	server   *http.Server
 	logger   *logrus.Logger
 
-	games        map[string]*Game
+	games        map[string]*game.Game
 	gamesMutex   sync.RWMutex
-	players      map[string]*Player
+	players      map[string]player.GamePlayer
 	playersMutex sync.RWMutex
 
 	datastore    datastore.Datastore
 	authProvider auth.AuthProvider
 
-	gameInit GameInit
-	gameTick GameTick
+	gameInit game.GameInit
+	gameTick game.GameTick
 }
 
 func New(
@@ -73,8 +69,8 @@ func New(
 		authProvider: ap,
 		datastore:    ds,
 		serveMux:     http.NewServeMux(),
-		games:        make(map[string]*Game),
-		players:      make(map[string]*Player),
+		games:        make(map[string]*game.Game),
+		players:      make(map[string]player.GamePlayer),
 	}
 
 	s.setupHandlers()
@@ -118,11 +114,11 @@ func (sgs *SimpleGameServer) Start() (err error) {
 	return sgs.server.Shutdown(ctx)
 }
 
-func (sgs *SimpleGameServer) WithGameInit(init GameInit) {
+func (sgs *SimpleGameServer) WithGameInit(init game.GameInit) {
 	sgs.gameInit = init
 }
 
-func (sgs *SimpleGameServer) WithGameTick(tick GameTick) {
+func (sgs *SimpleGameServer) WithGameTick(tick game.GameTick) {
 	sgs.gameTick = tick
 }
 
@@ -140,7 +136,7 @@ func (sgs *SimpleGameServer) connect(playerID string) (err error) {
 	if !exists {
 		sgs.logger.WithField("playerID", playerID).Infof("player connected to server")
 		sgs.playersMutex.Lock()
-		sgs.players[playerID] = &Player{
+		sgs.players[playerID] = &player.SGSGamePlayer{
 			ID: playerID,
 			// TODO some other things, maybe pull once from db to get some info
 		}
@@ -150,11 +146,11 @@ func (sgs *SimpleGameServer) connect(playerID string) (err error) {
 }
 
 // createGame creates and runs a game instance on the server
-func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout int) (game *Game, err error) {
+func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout int) (g *game.Game, err error) {
 	// TODO need some form of protection here later
-	game = NewGame(sgs.logger, numPlayers)
+	g = game.NewGame(sgs.logger, numPlayers)
 	sgs.gamesMutex.Lock()
-	sgs.games[game.ID] = game
+	sgs.games[g.ID] = g
 	sgs.gamesMutex.Unlock()
 
 	// Run the game in a separate goroutine
@@ -164,7 +160,7 @@ func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout in
 
 		go func() {
 			defer wg.Done()
-			game.run(
+			g.Run(
 				sgs.gameInit,
 				sgs.gameTick,
 				sgs.config.TickIntervalMS,
@@ -175,7 +171,7 @@ func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout in
 
 		wg.Wait()
 		sgs.gamesMutex.Lock()
-		delete(sgs.games, game.ID)
+		delete(sgs.games, g.ID)
 		sgs.gamesMutex.Unlock()
 
 	}()
@@ -183,33 +179,45 @@ func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout in
 	return
 }
 
-// joinGame adds a player to an existing game on the server
-func (sgs *SimpleGameServer) joinGame(
-	gameID string,
-	playerID string,
-	wsconn *websocket.Conn,
-) (err error) {
-	// find the game instance with the given ID
-	var g *Game
+func (sgs *SimpleGameServer) createPlayer(playerID string, w http.ResponseWriter, r *http.Request) (p *player.SGSGamePlayer, err error) {
+	// TODO, check if playerID is connected to server
+	// TODO, should bootstrap some info from server player to game player
+	p, err = player.NewSGSGamePlayer(playerID, w, r)
+	return
+}
+
+func (sgs *SimpleGameServer) getGame(gameID string) (g *game.Game, err error) {
 	var exists bool
 	sgs.gamesMutex.RLock()
 	g, exists = sgs.games[gameID]
 	sgs.gamesMutex.RUnlock()
 	if !exists {
-		err = fmt.Errorf("failed to join game, gameID: %s. gameID not found", gameID)
-		wsconn.Close(WS_STATUS_INVALID_PARAMETERS, err.Error())
+		err = fmt.Errorf("no game exists with ID")
+	}
+	return
+}
+
+// joinGame adds a player to an existing game on the server
+func (sgs *SimpleGameServer) joinGame(
+	gameID string,
+	player *player.SGSGamePlayer,
+) (err error) {
+	// Find the game instance with the given ID
+	var g *game.Game
+	if g, err = sgs.getGame(gameID); err != nil {
 		return
 	}
-
+	// Check if the game is full
 	g.PlayersMutex.RLock()
 	currentNumPlayers := len(g.Players)
 	g.PlayersMutex.RUnlock()
 	if currentNumPlayers >= g.NumPlayers {
-		err = fmt.Errorf("failed to join game, gameID: %s. game is full", gameID)
-		wsconn.Close(WS_STATUS_INVALID_PARAMETERS, err.Error())
+		err = sgs_errors.ErrGameFull
 		return
 	}
 
 	// Add the player to the game
-	return g.addPlayer(playerID, wsconn)
+	g.AddPlayer(player)
+
+	return
 }

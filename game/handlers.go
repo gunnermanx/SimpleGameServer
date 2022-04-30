@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/gunnermanx/simplegameserver/common"
-	"nhooyr.io/websocket"
+	game "github.com/gunnermanx/simplegameserver/game/game_instance"
+	player "github.com/gunnermanx/simplegameserver/game/game_instance/player"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -66,7 +68,7 @@ func (sgs *SimpleGameServer) connectHandler(w http.ResponseWriter, r *http.Reque
 
 func (sgs *SimpleGameServer) createGameHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
-	var game *Game
+	var g *game.Game
 
 	var statusCode int
 	var req CreateGameRequest
@@ -82,37 +84,49 @@ func (sgs *SimpleGameServer) createGameHandler(w http.ResponseWriter, r *http.Re
 		req.WaitForPlayersTimeout = DEFAULT_WAIT_FOR_PLAYERS_TIMEOUT_S
 	}
 
-	if game, err = sgs.createGame(req.NumPlayers, req.WaitForPlayersTimeout); err != nil {
+	if g, err = sgs.createGame(req.NumPlayers, req.WaitForPlayersTimeout); err != nil {
 		common.WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	common.WriteResponse(w, http.StatusCreated, common.ResponseData{
-		"gameID": game.ID,
+		"gameID": g.ID,
 	})
 }
 
 func (sgs *SimpleGameServer) joinGameHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 
-	var wsconn *websocket.Conn
-	if wsconn, err = websocket.Accept(w, r, nil); err != nil {
-		sgs.logger.Infof("failed to accept connection %s", err)
-		return
-	}
-
-	// TODO get playerID from context later on
 	var playerID string
 	if playerID, err = sgs.authProvider.GetUIDFromRequest(r); err != nil {
 		common.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
 	gameID := r.URL.Query().Get("id")
 	if gameID == "" {
 		// TODO, may need to log warn or info?
-		wsconn.Close(WS_STATUS_INVALID_PARAMETERS, "missing or invalid id parameter")
+		//wsconn.Close(WS_STATUS_INVALID_PARAMETERS, "missing or invalid id parameter")
+		common.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	sgs.joinGame(gameID, playerID, wsconn)
+	var player *player.SGSGamePlayer
+	if player, err = sgs.createPlayer(playerID, w, r); err != nil {
+		sgs.logger.WithFields(logrus.Fields{
+			"playerID": playerID,
+			"gameID":   gameID,
+		})
+		common.WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if err = sgs.joinGame(gameID, player); err != nil {
+		sgs.logger.WithFields(logrus.Fields{
+			"playerID": playerID,
+			"gameID":   gameID,
+			"error":    err.Error(),
+		}).Error("failed to join game")
+		player.CloseConnectionWithError(err)
+	}
 }

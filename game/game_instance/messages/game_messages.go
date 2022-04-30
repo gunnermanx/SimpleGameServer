@@ -1,4 +1,4 @@
-package game
+package game_messages
 
 const (
 	PLAYER_JOINED = 10
