@@ -32,13 +32,15 @@ type GameTick func(
 
 // Game models a game running on the game server
 type Game struct {
-	ID           string
+	Logger  *logrus.Entry
+	Context context.Context
+	Cancel  context.CancelFunc
+
+	ID         string
+	NumPlayers int
+
 	Players      map[string]player.GamePlayer
 	PlayersMutex sync.RWMutex
-	Context      context.Context
-	Logger       *logrus.Entry
-
-	NumPlayers   int
 	GameMessages chan messages.GameMessage
 
 	Data interface{}
@@ -59,6 +61,7 @@ func NewGame(
 	game.Logger = logger.WithFields(logrus.Fields{
 		"gameID": game.ID,
 	})
+	game.Context, game.Cancel = context.WithCancel(context.Background())
 	return
 }
 
@@ -75,12 +78,9 @@ func (g *Game) Run(
 	waitForPlayersTimeout int,
 	callback GameCompletedCallback,
 ) {
-	var err error
+	defer g.Cancel()
 
-	// Create a new context for the game
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	g.Context = ctx
+	var err error
 
 	// Create GameCompletedArgs
 	var results []interface{}
@@ -94,19 +94,19 @@ func (g *Game) Run(
 
 	// Wait for players before starting gameloop
 	var playerIDs []string
-	if playerIDs, err = g.WaitForPlayers(waitForPlayersTimeout); err != nil {
+	if playerIDs, err = g.waitForPlayers(waitForPlayersTimeout); err != nil {
 		return
 	}
 
 	// Initialize the game instance
 	var out map[string][]messages.GameMessage
-	if out, err = gameInit(ctx, g, playerIDs); err != nil {
+	if out, err = gameInit(g.Context, g, playerIDs); err != nil {
 		g.Logger.Errorf("error in gameinit: %s", err.Error())
-		cancel()
+		g.Cancel()
 	}
 	if err = g.sendMessagesToPlayers(out); err != nil {
 		// TODO maybe
-		cancel()
+		g.Cancel()
 		return
 	}
 
@@ -119,16 +119,16 @@ func (g *Game) Run(
 
 			// Run the gameTick
 			var out map[string][]messages.GameMessage
-			if out, err = gameTick(ctx, g, msgs); err != nil {
+			if out, err = gameTick(g.Context, g, msgs); err != nil {
 				g.Logger.Errorf("error in gametick: %s", err.Error())
-				cancel()
+				g.Cancel()
 				return
 			}
 
 			// Send messages back to players
 			if err = g.sendMessagesToPlayers(out); err != nil {
 				// TODO maybe
-				cancel()
+				g.Cancel()
 				return
 			}
 
@@ -142,7 +142,39 @@ func (g *Game) Run(
 	}
 }
 
-func (g *Game) WaitForPlayers(waitForPlayersTimeout int) (playerIDs []string, err error) {
+func (g *Game) AddPlayer(p player.GamePlayer) {
+	g.PlayersMutex.Lock()
+	if _, exists := g.Players[p.GetID()]; exists {
+		//TODO this is a reconnection? do we need to do more? send reconnection message?
+	}
+	g.Players[p.GetID()] = p
+	g.PlayersMutex.Unlock()
+
+	// Listen for game messages from the player
+	go g.listenToPlayer(p)
+
+	g.GameMessages <- messages.NewPlayerJoinedMessage(p.GetID())
+
+	g.Logger.WithField(
+		"playerID", p.GetID(),
+	).Info("player added to game")
+}
+
+func (g *Game) RemovePlayer(p player.GamePlayer) {
+	g.PlayersMutex.Lock()
+	delete(g.Players, p.GetID())
+	g.PlayersMutex.Unlock()
+
+	p.CloseConnection()
+
+	g.GameMessages <- messages.NewPlayerLeftMessage(p.GetID())
+
+	g.Logger.WithField(
+		"playerID", p.GetID(),
+	).Info("player removed from game")
+}
+
+func (g *Game) waitForPlayers(waitForPlayersTimeout int) (playerIDs []string, err error) {
 	ctx, cancel := context.WithTimeout(g.Context, time.Duration(waitForPlayersTimeout)*time.Second)
 	defer cancel()
 
@@ -173,17 +205,17 @@ loop:
 		}
 	}
 
-	if err != nil {
+	if err == nil {
 		fields := logrus.Fields{}
 		for i, playerID := range playerIDs {
 			fields[fmt.Sprintf("player%d_ID", i)] = playerID
 		}
-		g.Logger.WithFields(fields).Debug("finished waiting for players")
+		g.Logger.WithFields(fields).Info("finished waiting for players")
 	}
 	return
 }
 
-func (g *Game) ListenToPlayer(p player.GamePlayer) {
+func (g *Game) listenToPlayer(p player.GamePlayer) {
 	// defer removing the player from the game
 	defer func() {
 		g.Logger.WithField(
@@ -215,35 +247,6 @@ readLoop:
 			g.GameMessages <- gamemsg
 		}
 	}
-}
-
-func (g *Game) AddPlayer(p player.GamePlayer) {
-	g.PlayersMutex.Lock()
-	if _, exists := g.Players[p.GetID()]; exists {
-		//TODO this is a reconnection? do we need to do more? send reconnection message?
-	}
-	g.Players[p.GetID()] = p
-	g.PlayersMutex.Unlock()
-
-	g.GameMessages <- messages.NewPlayerJoinedMessage(p.GetID())
-
-	g.Logger.WithField(
-		"playerID", p.GetID(),
-	).Info("player added to game")
-}
-
-func (g *Game) RemovePlayer(p player.GamePlayer) {
-	g.PlayersMutex.Lock()
-	delete(g.Players, p.GetID())
-	g.PlayersMutex.Unlock()
-
-	p.CloseConnection()
-
-	g.GameMessages <- messages.NewPlayerLeftMessage(p.GetID())
-
-	g.Logger.WithField(
-		"playerID", p.GetID(),
-	).Info("player removed from game")
 }
 
 func (g *Game) sendMessagesToPlayers(out map[string][]messages.GameMessage) (err error) {

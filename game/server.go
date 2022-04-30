@@ -218,8 +218,6 @@ func (sgs *SimpleGameServer) joinGame(
 
 	// Add the player to the game
 	g.AddPlayer(player)
-	// Listen for game messages from the player
-	g.ListenToPlayer(player)
 
 	return
 }
