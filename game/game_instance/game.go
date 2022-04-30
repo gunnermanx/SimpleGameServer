@@ -183,48 +183,47 @@ loop:
 	return
 }
 
+func (g *Game) ListenToPlayer(p player.GamePlayer) {
+	// defer removing the player from the game
+	defer func() {
+		g.Logger.WithField(
+			"playerID", p.GetID(),
+		).Debug("stopped reading messages from player")
+	}()
+
+	g.Logger.WithField(
+		"playerID", p.GetID(),
+	).Debug("started reading messages from player")
+
+	var err error
+	var gamemsg messages.GameMessage
+readLoop:
+	for {
+		select {
+		case <-p.GetContext().Done():
+			break readLoop
+		case <-g.Context.Done():
+			break readLoop
+		default:
+			if gamemsg, err = p.Read(); err != nil {
+				g.Logger.WithFields(logrus.Fields{
+					"playerID": p.GetID(),
+					"error":    err.Error(),
+				}).Error("failed reading message from player")
+				break readLoop
+			}
+			g.GameMessages <- gamemsg
+		}
+	}
+}
+
 func (g *Game) AddPlayer(p player.GamePlayer) {
 	g.PlayersMutex.Lock()
 	if _, exists := g.Players[p.GetID()]; exists {
 		//TODO this is a reconnection? do we need to do more? send reconnection message?
-		g.Players[p.GetID()] = p
 	}
+	g.Players[p.GetID()] = p
 	g.PlayersMutex.Unlock()
-
-	// Start reading messages from player
-	go func() {
-		// defer removing the player from the game
-		defer func() {
-			g.Logger.WithField(
-				"playerID", p.GetID(),
-			).Debug("stopped reading messages from player")
-		}()
-
-		g.Logger.WithField(
-			"playerID", p.GetID(),
-		).Debug("started reading messages from player")
-
-		var err error
-		var gamemsg messages.GameMessage
-	readLoop:
-		for {
-			select {
-			case <-p.GetContext().Done():
-				break readLoop
-			case <-g.Context.Done():
-				break readLoop
-			default:
-				if gamemsg, err = p.Read(); err != nil {
-					g.Logger.WithFields(logrus.Fields{
-						"playerID": p.GetID(),
-						"error":    err.Error(),
-					}).Error("failed reading message from player")
-					break readLoop
-				}
-				g.GameMessages <- gamemsg
-			}
-		}
-	}()
 
 	g.GameMessages <- messages.NewPlayerJoinedMessage(p.GetID())
 
@@ -233,7 +232,7 @@ func (g *Game) AddPlayer(p player.GamePlayer) {
 	).Info("player added to game")
 }
 
-func (g *Game) removePlayer(p player.GamePlayer) {
+func (g *Game) RemovePlayer(p player.GamePlayer) {
 	g.PlayersMutex.Lock()
 	delete(g.Players, p.GetID())
 	g.PlayersMutex.Unlock()

@@ -4,9 +4,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/golang/mock/gomock"
 	errors "github.com/gunnermanx/simplegameserver/game/errors"
 	game "github.com/gunnermanx/simplegameserver/game/game_instance"
 	messages "github.com/gunnermanx/simplegameserver/game/game_instance/messages"
+	"github.com/gunnermanx/simplegameserver/game/mocks"
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
@@ -48,11 +50,36 @@ func TestGame(t *testing.T) {
 
 	})
 
-	t.Run("add player", func(t *testing.T) {
+	t.Run("add player and remove player", func(t *testing.T) {
 		g = game.NewGame(logger, 2)
 		g.Context = context.Background()
 
-		//g.AddPlayer()
+		mockCtrl := gomock.NewController(t)
+		defer mockCtrl.Finish()
+		mockPlayer := mocks.NewMockGamePlayer(mockCtrl)
+
+		mockPlayer.EXPECT().GetID().Return(p1_id).AnyTimes()
+		mockPlayer.EXPECT().CloseConnection().Times(1)
+
+		var msg messages.GameMessage
+
+		// AddPlayer will send player added message, blocking the goroutine
+		go func() {
+			msg = <-g.GameMessages
+			require.Equal(t, msg.Code, messages.PLAYER_JOINED)
+			require.Equal(t, msg.Data, p1_id)
+		}()
+		g.AddPlayer(mockPlayer)
+		require.Contains(t, g.Players, p1_id)
+
+		// RemovePlayer will send player removed message, blocking the goroutine
+		go func() {
+			msg = <-g.GameMessages
+			require.Equal(t, msg.Code, messages.PLAYER_LEFT)
+			require.Equal(t, msg.Data, p1_id)
+		}()
+		g.RemovePlayer(mockPlayer)
+		require.NotContains(t, g.Players, p1_id)
 
 	})
 
