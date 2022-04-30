@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/gunnermanx/simplegameserver/server"
+	"github.com/gunnermanx/simplegameserver/game"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +15,7 @@ func TestGame(t *testing.T) {
 	p2_id := "p2_id"
 
 	logger := logrus.New()
-	game := server.NewGame(logger, 2)
+	game := game.NewGame(logger, 2)
 	game.Context = context.Background()
 
 	t.Run("create game", func(t *testing.T) {
@@ -27,12 +27,12 @@ func TestGame(t *testing.T) {
 		// Also for p1, have the player join and leave, then join again
 		t.Run("players joined in time", func(t *testing.T) {
 			go func() {
-				game.GameMessages <- server.NewPlayerJoinedMessage(p1_id)
-				game.GameMessages <- server.NewPlayerLeftMessage(p1_id)
-				game.GameMessages <- server.NewPlayerJoinedMessage(p1_id)
+				game.GameMessages <- game.NewPlayerJoinedMessage(p1_id)
+				game.GameMessages <- game.NewPlayerLeftMessage(p1_id)
+				game.GameMessages <- game.NewPlayerJoinedMessage(p1_id)
 			}()
 			go func() {
-				game.GameMessages <- server.NewPlayerJoinedMessage(p2_id)
+				game.GameMessages <- game.NewPlayerJoinedMessage(p2_id)
 			}()
 			playerIDs, err := game.WaitForPlayers(5)
 
@@ -42,7 +42,7 @@ func TestGame(t *testing.T) {
 		// Set timeout to 1 sec and wait for the timeout
 		t.Run("timed out waiting", func(t *testing.T) {
 			playerIDs, err := game.WaitForPlayers(1)
-			require.ErrorIs(t, err, server.ErrTimedoutWaitingForPlayers)
+			require.ErrorIs(t, err, game.ErrTimedoutWaitingForPlayers)
 			require.ElementsMatch(t, playerIDs, []string{})
 		})
 

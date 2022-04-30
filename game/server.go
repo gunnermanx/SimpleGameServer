@@ -43,15 +43,15 @@ type GameTick func(ctx context.Context, g *Game, msgs []GameMessage) (map[string
 //   Joining/Leaving games
 //   Relay messages between the server and clients
 type SimpleGameServer struct {
-	sync.Mutex
-
 	config   *config.GameServerConfig
 	serveMux *http.ServeMux
 	server   *http.Server
 	logger   *logrus.Logger
 
-	games   map[string]*Game
-	players map[string]*Player
+	games        map[string]*Game
+	gamesMutex   sync.RWMutex
+	players      map[string]*Player
+	playersMutex sync.RWMutex
 
 	datastore    datastore.Datastore
 	authProvider auth.AuthProvider
@@ -134,12 +134,17 @@ func (sgs *SimpleGameServer) connect(playerID string) (err error) {
 	// TODO add some protection
 
 	var exists bool
-	if _, exists = sgs.players[playerID]; !exists {
+	sgs.playersMutex.RLock()
+	_, exists = sgs.players[playerID]
+	sgs.playersMutex.RUnlock()
+	if !exists {
 		sgs.logger.WithField("playerID", playerID).Infof("player connected to server")
+		sgs.playersMutex.Lock()
 		sgs.players[playerID] = &Player{
 			ID: playerID,
 			// TODO some other things, maybe pull once from db to get some info
 		}
+		sgs.playersMutex.Unlock()
 	}
 	return
 }
@@ -148,12 +153,32 @@ func (sgs *SimpleGameServer) connect(playerID string) (err error) {
 func (sgs *SimpleGameServer) createGame(numPlayers int, waitForPlayersTimeout int) (game *Game, err error) {
 	// TODO need some form of protection here later
 	game = NewGame(sgs.logger, numPlayers)
-	sgs.Lock()
+	sgs.gamesMutex.Lock()
 	sgs.games[game.ID] = game
-	sgs.Unlock()
+	sgs.gamesMutex.Unlock()
 
 	// Run the game in a separate goroutine
-	go game.run(sgs.gameInit, sgs.gameTick, sgs.config.TickIntervalMS, waitForPlayersTimeout)
+	go func() {
+		var wg sync.WaitGroup
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+			game.run(
+				sgs.gameInit,
+				sgs.gameTick,
+				sgs.config.TickIntervalMS,
+				waitForPlayersTimeout,
+				nil,
+			)
+		}()
+
+		wg.Wait()
+		sgs.gamesMutex.Lock()
+		delete(sgs.games, game.ID)
+		sgs.gamesMutex.Unlock()
+
+	}()
 
 	return
 }
@@ -167,18 +192,18 @@ func (sgs *SimpleGameServer) joinGame(
 	// find the game instance with the given ID
 	var g *Game
 	var exists bool
-	sgs.Lock()
+	sgs.gamesMutex.RLock()
 	g, exists = sgs.games[gameID]
-	sgs.Unlock()
+	sgs.gamesMutex.RUnlock()
 	if !exists {
 		err = fmt.Errorf("failed to join game, gameID: %s. gameID not found", gameID)
 		wsconn.Close(WS_STATUS_INVALID_PARAMETERS, err.Error())
 		return
 	}
 
-	g.Lock()
+	g.PlayersMutex.RLock()
 	currentNumPlayers := len(g.Players)
-	g.Unlock()
+	g.PlayersMutex.RUnlock()
 	if currentNumPlayers >= g.NumPlayers {
 		err = fmt.Errorf("failed to join game, gameID: %s. game is full", gameID)
 		wsconn.Close(WS_STATUS_INVALID_PARAMETERS, err.Error())

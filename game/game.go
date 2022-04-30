@@ -16,18 +16,19 @@ import (
 
 // Game models a game running on the game server
 type Game struct {
-	sync.Mutex
-
-	ID      string
-	Players map[string]*Player
-	Context context.Context
-	Logger  *logrus.Entry
+	ID           string
+	Players      map[string]*Player
+	PlayersMutex sync.RWMutex
+	Context      context.Context
+	Logger       *logrus.Entry
 
 	NumPlayers   int
 	GameMessages chan GameMessage
 
 	Data interface{}
 }
+
+type GameCompletedCallback func(error, ...interface{})
 
 func NewGame(
 	logger *logrus.Logger,
@@ -52,19 +53,31 @@ func NewGame(
 //   2. initialize the game instance once players have joined
 //   3. start the game loop
 func (g *Game) run(
+
 	gameInit GameInit,
 	gameTick GameTick,
 	tickIntervalMS int,
 	waitForPlayersTimeout int,
+	callback GameCompletedCallback,
 ) {
 	// Create a new context for the game
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	g.Context = ctx
 
+	// Create GameCompletedArgs
+	var results []interface{}
+	var err error
+
+	defer func() {
+		if callback != nil {
+			callback(err, results)
+		}
+		g.Logger.Info("game completed")
+	}()
+
 	// Wait for players before starting gameloop
 	var playerIDs []string
-	var err error
 	g.Logger.Debug("started waiting for players")
 	if playerIDs, err = g.WaitForPlayers(waitForPlayersTimeout); err != nil {
 		g.Logger.Errorf("failed waiting for players: %s", err.Error())
@@ -115,8 +128,6 @@ func (g *Game) run(
 			// TODO parse them
 		}
 	}
-
-	g.Logger.Infof("game %s completed", g.ID)
 }
 
 func (g *Game) WaitForPlayers(waitForPlayersTimeout int) (playerIDs []string, err error) {
@@ -154,7 +165,7 @@ func (g *Game) addPlayer(playerID string, wsconn *websocket.Conn) (err error) {
 	var p *Player
 	var exists bool
 
-	g.Lock()
+	g.PlayersMutex.Lock()
 	if p, exists = g.Players[playerID]; !exists {
 		// log player creation?
 		p = &Player{
@@ -162,7 +173,7 @@ func (g *Game) addPlayer(playerID string, wsconn *websocket.Conn) (err error) {
 		}
 		g.Players[playerID] = p
 	}
-	g.Unlock()
+	g.PlayersMutex.Unlock()
 	p.WSConn = wsconn
 
 	// Create a goroutine to handle messages from the player
@@ -173,7 +184,9 @@ func (g *Game) addPlayer(playerID string, wsconn *websocket.Conn) (err error) {
 			).Infof("stopped listening on wsconn")
 
 			// TODO verify this works correct
+			game.PlayersMutex.Lock()
 			delete(game.Players, player.ID)
+			game.PlayersMutex.Unlock()
 
 			game.GameMessages <- NewPlayerLeftMessage(player.ID)
 		}()
@@ -219,11 +232,13 @@ func (g *Game) addPlayer(playerID string, wsconn *websocket.Conn) (err error) {
 }
 
 func (g *Game) sendMessagesToPlayers(out map[string][]GameMessage) (err error) {
-
 	var p *Player
 	var exists bool
 	for playerID, msgs := range out {
-		if p, exists = g.Players[playerID]; !exists {
+		g.PlayersMutex.RLock()
+		p, exists = g.Players[playerID]
+		g.PlayersMutex.RUnlock()
+		if !exists {
 			err = fmt.Errorf("no player in game with ID: %s", playerID)
 			return
 		}
