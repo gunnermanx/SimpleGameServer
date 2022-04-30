@@ -53,7 +53,6 @@ func NewGame(
 //   2. initialize the game instance once players have joined
 //   3. start the game loop
 func (g *Game) run(
-
 	gameInit GameInit,
 	gameTick GameTick,
 	tickIntervalMS int,
@@ -68,7 +67,6 @@ func (g *Game) run(
 	// Create GameCompletedArgs
 	var results []interface{}
 	var err error
-
 	defer func() {
 		if callback != nil {
 			callback(err, results)
@@ -81,7 +79,6 @@ func (g *Game) run(
 	g.Logger.Debug("started waiting for players")
 	if playerIDs, err = g.WaitForPlayers(waitForPlayersTimeout); err != nil {
 		g.Logger.Errorf("failed waiting for players: %s", err.Error())
-		cancel()
 		return
 	}
 	g.Logger.Debugf("finished waiting for players. p1: %s, p2: %s", playerIDs[0], playerIDs[1])

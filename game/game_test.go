@@ -15,8 +15,8 @@ func TestGame(t *testing.T) {
 	p2_id := "p2_id"
 
 	logger := logrus.New()
-	game := game.NewGame(logger, 2)
-	game.Context = context.Background()
+	g := game.NewGame(logger, 2)
+	g.Context = context.Background()
 
 	t.Run("create game", func(t *testing.T) {
 
@@ -27,21 +27,21 @@ func TestGame(t *testing.T) {
 		// Also for p1, have the player join and leave, then join again
 		t.Run("players joined in time", func(t *testing.T) {
 			go func() {
-				game.GameMessages <- game.NewPlayerJoinedMessage(p1_id)
-				game.GameMessages <- game.NewPlayerLeftMessage(p1_id)
-				game.GameMessages <- game.NewPlayerJoinedMessage(p1_id)
+				g.GameMessages <- game.NewPlayerJoinedMessage(p1_id)
+				g.GameMessages <- game.NewPlayerLeftMessage(p1_id)
+				g.GameMessages <- game.NewPlayerJoinedMessage(p1_id)
 			}()
 			go func() {
-				game.GameMessages <- game.NewPlayerJoinedMessage(p2_id)
+				g.GameMessages <- game.NewPlayerJoinedMessage(p2_id)
 			}()
-			playerIDs, err := game.WaitForPlayers(5)
+			playerIDs, err := g.WaitForPlayers(5)
 
 			require.NoError(t, err)
 			require.ElementsMatch(t, playerIDs, []string{p1_id, p2_id})
 		})
 		// Set timeout to 1 sec and wait for the timeout
 		t.Run("timed out waiting", func(t *testing.T) {
-			playerIDs, err := game.WaitForPlayers(1)
+			playerIDs, err := g.WaitForPlayers(1)
 			require.ErrorIs(t, err, game.ErrTimedoutWaitingForPlayers)
 			require.ElementsMatch(t, playerIDs, []string{})
 		})
