@@ -6,6 +6,8 @@ import (
 	"net/http"
 )
 
+//go:generate mockgen -destination=../mocks/mock_authprovider.go -package=mocks github.com/gunnermanx/simplegameserver/auth AuthProvider
+
 var (
 	ErrUnauthorized    = errors.New("unauthorized")
 	ErrUnknownIdentity = errors.New("no identity")

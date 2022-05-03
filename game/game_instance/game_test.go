@@ -9,7 +9,7 @@ import (
 	"github.com/golang/mock/gomock"
 	errors "github.com/gunnermanx/simplegameserver/game/errors"
 	messages "github.com/gunnermanx/simplegameserver/game/game_instance/messages"
-	"github.com/gunnermanx/simplegameserver/game/mocks"
+	mocks "github.com/gunnermanx/simplegameserver/mocks"
 	"github.com/stretchr/testify/require"
 
 	"github.com/sirupsen/logrus"
