@@ -14,9 +14,9 @@ import (
 	"github.com/gunnermanx/simplegameserver/config"
 	"github.com/gunnermanx/simplegameserver/datastore"
 
-	sgs_errors "github.com/gunnermanx/simplegameserver/game/errors"
-	game "github.com/gunnermanx/simplegameserver/game/game_instance"
-	player "github.com/gunnermanx/simplegameserver/game/game_instance/player"
+	sgs_errors "github.com/gunnermanx/simplegameserver/game_server/errors"
+	game "github.com/gunnermanx/simplegameserver/game_server/game"
+	player "github.com/gunnermanx/simplegameserver/game_server/game/player"
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"

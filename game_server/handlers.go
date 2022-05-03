@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/gunnermanx/simplegameserver/common"
-	game "github.com/gunnermanx/simplegameserver/game/game_instance"
-	player "github.com/gunnermanx/simplegameserver/game/game_instance/player"
+	game "github.com/gunnermanx/simplegameserver/game_server/game"
+	player "github.com/gunnermanx/simplegameserver/game_server/game/player"
 	"github.com/sirupsen/logrus"
 )
 

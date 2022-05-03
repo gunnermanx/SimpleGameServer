@@ -6,12 +6,12 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/gunnermanx/simplegameserver/config"
-	game "github.com/gunnermanx/simplegameserver/game/game_instance"
-	messages "github.com/gunnermanx/simplegameserver/game/game_instance/messages"
-	game_player "github.com/gunnermanx/simplegameserver/game/game_instance/player"
+	game "github.com/gunnermanx/simplegameserver/game_server/game"
+	messages "github.com/gunnermanx/simplegameserver/game_server/game/messages"
+	game_player "github.com/gunnermanx/simplegameserver/game_server/game/player"
 	mocks "github.com/gunnermanx/simplegameserver/mocks"
 
-	sgs_errors "github.com/gunnermanx/simplegameserver/game/errors"
+	sgs_errors "github.com/gunnermanx/simplegameserver/game_server/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )

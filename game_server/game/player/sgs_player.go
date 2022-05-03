@@ -5,8 +5,8 @@ import (
 	"io"
 	"net/http"
 
-	sgs_errors "github.com/gunnermanx/simplegameserver/game/errors"
-	messages "github.com/gunnermanx/simplegameserver/game/game_instance/messages"
+	sgs_errors "github.com/gunnermanx/simplegameserver/game_server/errors"
+	messages "github.com/gunnermanx/simplegameserver/game_server/game/messages"
 	"github.com/pkg/errors"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"

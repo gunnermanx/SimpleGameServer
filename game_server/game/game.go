@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	errors "github.com/gunnermanx/simplegameserver/game/errors"
-	messages "github.com/gunnermanx/simplegameserver/game/game_instance/messages"
-	player "github.com/gunnermanx/simplegameserver/game/game_instance/player"
+	errors "github.com/gunnermanx/simplegameserver/game_server/errors"
+	messages "github.com/gunnermanx/simplegameserver/game_server/game/messages"
+	player "github.com/gunnermanx/simplegameserver/game_server/game/player"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"

@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	errors "github.com/gunnermanx/simplegameserver/game/errors"
-	messages "github.com/gunnermanx/simplegameserver/game/game_instance/messages"
+	errors "github.com/gunnermanx/simplegameserver/game_server/errors"
+	messages "github.com/gunnermanx/simplegameserver/game_server/game/messages"
 	mocks "github.com/gunnermanx/simplegameserver/mocks"
 	"github.com/stretchr/testify/require"
 

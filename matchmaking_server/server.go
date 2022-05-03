@@ -13,7 +13,7 @@ import (
 	"github.com/gunnermanx/simplegameserver/auth"
 	"github.com/gunnermanx/simplegameserver/config"
 	"github.com/gunnermanx/simplegameserver/datastore"
-	"github.com/gunnermanx/simplegameserver/matchmaking/strategy"
+	"github.com/gunnermanx/simplegameserver/matchmaking_server/strategy"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
