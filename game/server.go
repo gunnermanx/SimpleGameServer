@@ -192,7 +192,7 @@ func (sgs *SimpleGameServer) getGame(gameID string) (g *game.Game, err error) {
 	g, exists = sgs.games[gameID]
 	sgs.gamesMutex.RUnlock()
 	if !exists {
-		err = fmt.Errorf("no game exists with ID")
+		err = sgs_errors.ErrGameNotFound
 	}
 	return
 }
@@ -200,7 +200,7 @@ func (sgs *SimpleGameServer) getGame(gameID string) (g *game.Game, err error) {
 // joinGame adds a player to an existing game on the server
 func (sgs *SimpleGameServer) joinGame(
 	gameID string,
-	player *player.SGSGamePlayer,
+	player player.GamePlayer,
 ) (err error) {
 	// Find the game instance with the given ID
 	var g *game.Game
